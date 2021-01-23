@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import re
+import time
+import html
+
+# import gtranslate
+import googlejson
+
+def get_regexes():
+    numbers=re.compile("^[0-9]+$")
+    timestamp=re.compile("^[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}$") # 00:00:22,500 --> 00:00:26,400
+    return (numbers,timestamp)
+
+
+def get_lines(opts):
+    filename=opts.filename
+    with open(filename,"r") as f:
+        lines=f.readlines()
+    # print(lines)
+    return lines
+
+def simplify_oneline(opts):
+    (numbers,timestamp)=get_regexes()
+    lines=get_lines(opts)
+    newlines=[]
+    wastext=False
+    for line in lines:
+        line=line.strip()
+        print("line",line)
+        if line=="":
+            if wastext:
+                newlines.append(wasline)
+            newlines.append('')
+            wastext=False
+        elif numbers.match(line):
+            newlines.append(line)
+            wastext=False
+        elif timestamp.match(line):
+            newlines.append(line)
+            wastext=False
+        else:
+            if wastext:
+                wastext=False
+                newlines.append(wasline+" "+line)
+                wasline=''
+            else:
+                wastext=True
+                wasline=line
+    print('\n'.join(newlines))
+    return newlines
+
+def process_file(opts):
+    # numbers=re.compile("^[0-9]+$")
+    # timestamp=re.compile("^[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}$") # 00:00:22,500 --> 00:00:26,400
+    (numbers,timestamp)=get_regexes()
+
+    # filename=opts.filename
+    #  with open(filename,"r") as f:
+    #     lines=f.readlines()
+    # print(lines)
+
+    # lines=get_lines(opts)
+    lines=simplify_oneline(opts)
+    
+    # 1st pass: get the translations
+    texts=[]
+    for line in lines:
+        line=line.strip()
+        print("line",line)
+        if line=="":
+            pass
+        elif numbers.match(line):
+            pass
+        elif timestamp.match(line):
+            pass
+        else:
+            texts.append(line)
+    jsonfile="translations.json"
+    googletranslatefunction=googlejson.google_text2trans_pay
+    bigdic=googlejson.get_googletranslation_from_texts(texts,jsonfile,googletranslatefunction)
+
+    # 2nd pass: insert the translations
+    out=[]
+    for line in lines:
+        line=line.strip()
+        print("line",line)
+        out.append(line)
+        if line=="":
+            pass
+        elif numbers.match(line):
+            pass
+        elif timestamp.match(line):
+            pass
+        else:
+            # frtext=gtranslate.translate_wrapper(line)
+            frtext=bigdic[line]
+            frtext=html.unescape(frtext)
+            print("FR",frtext)
+            out.append(frtext)
+    with open(opts.filename+".comboFR.srt","w") as ff:
+        ff.write('\n'.join(out))
+        
+def parse_cli():
+    xx="parse_cli"
+    parser = argparse.ArgumentParser(description="""Takes a SRT file and translate it to English and outputs a new SRT file with both languages.
+That's nice to learn a new language.
+
+use mplayer -utf8 -sub newfile.rst file.mp4
+""",formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('filename',help="the txt file to convert")
+    opts = parser.parse_args()
+    print(xx,"opts:",opts)
+    return opts
+
+
+
+
+if __name__ == "__main__":
+    opts=parse_cli()
+    # simplify_oneline(opts)
+    process_file(opts)
+    
