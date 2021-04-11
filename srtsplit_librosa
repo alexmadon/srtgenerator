@@ -1,0 +1,201 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import datetime
+
+
+
+import librosa
+import librosa.display
+
+import soundfile
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+import glob
+import re
+
+"""
+conda activate
+python --version
+Python 3.8.5
+which spleeter
+/home/madon/Downloads/anaconda3/bin/spleeter
+
+cd ~/Downloads/anaconda3
+/home/madon/Downloads/anaconda3/bin/spleeter separate -p spleeter:2stems -o /home/madon/Downloads/anaconda3/spleeterouput ~/srtgenerator/'TOP GIRLS - MLECZKO (Official video) NOWOŚĆ 2017!!!-Tb1NY0IByTw.mp4'
+
+
+./srtplit_librosa.py /home/madon/Downloads/anaconda3/output/2funpo/vocals.wav -t '2FUN- POCZUĆ CHCĘ  (OFFICIAL VIDEO)-5gpRnuvz8rw.txt'
+
+"""
+
+
+# spleeter separate -p spleeter:2stems -o output ~/srtgenerator/2funpo.mp4 
+
+# https://stackoverflow.com/questions/45884408/tensorflow-valueerror-cant-load-save-path-when-it-is-none-in-single-shot-dete/47707275
+
+# speechFileList = ['/home/madon/Downloads/anaconda3/output/2funpo/vocals.wav',]
+# https://iq.opengenus.org/introduction-to-librosa/
+# https://medium.com/@vvk.victory/audio-processing-librosa-split-on-silence-8e1edab07bbb
+# for speechFile in speechFileList:
+# (base) madon@hp:~/Downloads/anaconda3/pretrained_models/2stems$ 
+# ~/Downloads/anaconda3/lib/python3.8/site-packages/spleeter
+# (base) madon@hp:~/Downloads/anaconda3/lib/python3.8/site-packages/spleeter$ rg pretrained_models
+# model/provider/__init__.py
+# 31:    DEFAULT_MODEL_PATH: str = environ.get("MODEL_PATH", "pretrained_models")
+
+def get_vocals_filename(opts):
+    filename=opts.filename # the mp4 music video 
+    save_wav_directory="/home/madon/Downloads"
+    vocals_directory=save_wav_directory+'/'+filename[:-4]
+    print("vocals_directory",vocals_directory)
+    vocals_file=vocals_directory+'/vocals.wav'
+    print("vocals_file",vocals_file)
+    return (save_wav_directory,vocals_file)
+
+def apply_spleeter(opts):
+    import spleeter.separator # needs anaconda: conda activate
+    filename=opts.filename # the mp4 music video 
+    print("using video file",filename)
+    (save_wav_directory,vocals_file)=get_vocals_filename(opts)
+    separator = spleeter.separator.Separator('spleeter:2stems')
+    separator.separate_to_file(filename, save_wav_directory)
+
+def identify_split(opts):
+    xx="identify_split"
+    filename=opts.filename # the MP4 file
+
+    (save_wav_directory,vocals_file)=get_vocals_filename(opts)
+    # the WAV file containing the voices
+    time_series, sampling_rate = librosa.load(vocals_file,sr=None)
+    top_decibels= opts.decibels # 17 # 10 # 18
+    ts = librosa.effects.split(time_series,top_db=top_decibels, ref=np.max)
+    
+    print("ts",ts)
+    i=1
+    out=[]
+    adic={}
+    for start_i, end_i in ts:
+        print("i",i)
+        print("start_i, end_i",(start_i, end_i))
+        time_start=float(start_i/sampling_rate)
+        time_end=float(end_i/sampling_rate)
+        
+        time_start=datetime.datetime.utcfromtimestamp(time_start).time()
+        time_end=datetime.datetime.utcfromtimestamp(time_end).time()
+        
+        print('duration: {}s'.format(float(end_i-start_i+1)/sampling_rate))
+        
+        theformat="%H:%M:%S,%f"
+        isostart=time_start.strftime(theformat)
+        isoend=time_end.strftime(theformat)
+        
+        out.append(str(i))
+        out.append(isostart[:-3]+" --> "+isoend[:-3])
+        out.append('txt'+'{:03}'.format(i))
+        out.append('')
+        adic[i]={'start':isostart[:-3],'end':isoend[:-3]}
+        i=i+1
+    outfile=filename[:-3]+'srt'
+    # outfile='test.srt'
+    print(xx,"writing DUMMY to",outfile)
+    f=open(outfile, "w")
+    f.write("\n".join(out))
+    f.close()
+
+    return adic
+
+def generate_srt(opts,adic):
+    print("adic",json.dumps(adic,indent=4,ensure_ascii=False))
+    filename=opts.filename
+    textfile=filename[:-3]+'txt'
+    f=open(textfile, "r")
+    lines=f.readlines()
+    f.close()
+    tdic={}
+    pattern='^([0-9]+) (.+)$'
+    regex=re.compile(pattern)
+    for line in lines:
+        m=regex.match(line)
+        if m:
+            index=int(m.group(1))
+            text=m.group(2)
+            tdic[index]=text.strip()
+    print("tdic",json.dumps(tdic,indent=4,ensure_ascii=False))
+    adickeys=list(adic.keys())
+    # https://stackoverflow.com/questions/1198512/split-a-list-into-parts-based-on-a-set-of-indexes-in-python
+    indices=list(tdic.keys())
+    thezip=list(zip([0]+indices, indices+[max(adickeys)]))
+    print("thezip",thezip)
+    combo={}
+    i=1
+    for k,v in tdic.items():
+        details={}
+        details['text']=v
+        (start,end)=thezip[i]
+        details['span']=(start,end)
+        details['start']=adic[start]['start']
+        details['end']=adic[end-1]['end']
+
+        i=i+1
+        combo[k]=details
+    print("combo",json.dumps(combo,indent=4,ensure_ascii=False))
+
+
+    out=[]
+    i=1
+    for k,acombo in combo.items():
+        if acombo['text'] not in ['=','*',]: # = is a separator to end a text afbepfre a long period of music
+            out.append(str(i))
+            out.append(acombo['start']+" --> "+acombo['end'])
+            out.append(acombo['text'])
+            out.append('')
+            i=i+1
+    content='\n'.join(out)
+    srtfile=textfile[:-4]+'.srt'
+    print("writing to",srtfile)
+    f=open(srtfile,'w')
+    f.write(content)
+    f.close()
+def parse_cli():
+    xx="parse_cli"
+    parser = argparse.ArgumentParser(description="""
+Takes a mp4 file
+
+applies spleeter to create a voices.wav file
+Note you need to point to deezer spleeter models:
+export MODEL_PATH=/home/madon/Downloads/anaconda3/pretrained_models
+
+then identify non silence
+and ouputs a srt with times that you just nee to fill with TXT
+https://mmchiou.gitbooks.io/ai_gc_methodology_2018_v1-private/content/zhong-wen-yu-yin-sentence-segmentation/acoustic-domain-sentence-segmentation/using-librosa-library.html
+
+example usage:
+
+./srtplit_librosa.py /home/madon/Downloads/anaconda3/output/2funpo/vocals.wav
+
+
+""",formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('filename',help="the video file (MP4) to extract WAV file to analyze")
+
+    parser.add_argument('-s','--spleeter', help="extract vocals.wav using deezer spleeter",action="store_true")
+    parser.add_argument('-i','--identify', help="identify silent vs voice segments and generate a dummy SRT file with numbers",action="store_true")
+    parser.add_argument('-d','--decibels', help="the number of decibels to split on silence",type=int,default=17)
+    
+    parser.add_argument('-t','--textfile',help="Use a TXT file to generate a true SRT file",action="store_true")
+    opts = parser.parse_args()
+    print(xx,"opts:",opts)
+    return opts
+
+if __name__ == "__main__":
+    opts=parse_cli()
+    if opts.spleeter:
+        apply_spleeter(opts)
+    if opts.identify:
+        adic=identify_split(opts)
+    if opts.textfile:
+        generate_srt(opts,adic)
