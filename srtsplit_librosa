@@ -50,7 +50,7 @@ cd ~/Downloads/anaconda3
 
 def get_vocals_filename(opts):
     filename=opts.filename # the mp4 music video 
-    save_wav_directory="/home/madon/Downloads"
+    save_wav_directory="/home/madon/Downloads/tmp_spleeter"
     vocals_directory=save_wav_directory+'/'+filename[:-4]
     print("vocals_directory",vocals_directory)
     vocals_file=vocals_directory+'/vocals.wav'
@@ -79,6 +79,7 @@ def identify_split(opts):
     i=1
     out=[]
     adic={}
+    print("looping over indexes")
     for start_i, end_i in ts:
         print("i",i)
         print("start_i, end_i",(start_i, end_i))
@@ -117,14 +118,22 @@ def generate_srt(opts,adic):
     lines=f.readlines()
     f.close()
     tdic={}
-    pattern='^([0-9]+) (.+)$'
+    pattern='^([0-9]+)(.*)$'
     regex=re.compile(pattern)
+
+    oldindex=0
     for line in lines:
         m=regex.match(line)
         if m:
             index=int(m.group(1))
             text=m.group(2)
             tdic[index]=text.strip()
+            if index < oldindex:
+                print("ERROR in TXT file at index",index,"which is less than",oldindex,", indexes must grow.... TEXT",text.strip())
+                quit()
+            else:
+                oldindex=index
+            
     print("tdic",json.dumps(tdic,indent=4,ensure_ascii=False))
     adickeys=list(adic.keys())
     # https://stackoverflow.com/questions/1198512/split-a-list-into-parts-based-on-a-set-of-indexes-in-python
@@ -149,7 +158,8 @@ def generate_srt(opts,adic):
     out=[]
     i=1
     for k,acombo in combo.items():
-        if acombo['text'] not in ['=','*',]: # = is a separator to end a text afbepfre a long period of music
+        print("looking at text",acombo['text'])
+        if acombo['text'] not in ['=','*','',]: # = is a separator to end a text afbepfre a long period of music
             out.append(str(i))
             out.append(acombo['start']+" --> "+acombo['end'])
             out.append(acombo['text'])
@@ -157,14 +167,34 @@ def generate_srt(opts,adic):
             i=i+1
     content='\n'.join(out)
     srtfile=textfile[:-4]+'.srt'
-    print("writing to",srtfile)
+    print("mmmm writing to '"+srtfile+"'")
     f=open(srtfile,'w')
     f.write(content)
     f.close()
+    
 def parse_cli():
     xx="parse_cli"
     parser = argparse.ArgumentParser(description="""
 Takes a mp4 file
+
+
+conda activate
+python --version
+Python 3.8.5
+
+Typically you run with -si option
+
+You then have a dummy srt file.
+You vlc the mp4 file, and add numbers in front of each line of the TXT file you got from internet
+An empty line is with a dot '.'
+Then you generate the final srt file with:
+
+Then with -it
+
+
+/home/madon/srtgenerator/srtsplit_librosa -si file.mp4
+/home/madon/srtgenerator/srtsplit_librosa -it file.mp4
+
 
 applies spleeter to create a voices.wav file
 Note you need to point to deezer spleeter models:
@@ -184,7 +214,7 @@ example usage:
 
     parser.add_argument('-s','--spleeter', help="extract vocals.wav using deezer spleeter",action="store_true")
     parser.add_argument('-i','--identify', help="identify silent vs voice segments and generate a dummy SRT file with numbers",action="store_true")
-    parser.add_argument('-d','--decibels', help="the number of decibels to split on silence",type=int,default=17)
+    parser.add_argument('-d','--decibels', help="the number of decibels to split on silence",type=int,default=10)
     
     parser.add_argument('-t','--textfile',help="Use a TXT file to generate a true SRT file",action="store_true")
     opts = parser.parse_args()
